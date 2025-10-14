@@ -1,6 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-
 #include "kernel.h"
 
 #define MAX 100
@@ -10,16 +7,16 @@ int syscallFd; // pipe para dados do syscall
 
 void _syscall(int Dx, int Op)
 {
-    write(syscallFd, Dx, sizeof(int));
-    write(syscallFd, Op, sizeof(int));
-    kill(SIGUSR1, getppid());
+    write(syscallFd, &Dx, sizeof(int));
+    write(syscallFd, &Op, sizeof(int));
+    kill(SIGUSR2, getppid());
     context->PC++;
 }
 
 int main(int argc, char* argv[])
 {
-    context = shmat(atoi(argv[0]), 0, 0);
-    syscallFd = dup(atoi(argv[1]));
+    context = shmat(atoi(argv[1]), 0, 0);
+    syscallFd = atoi(argv[2]);
 
     int Dx;
     int Op;
@@ -37,7 +34,7 @@ int main(int argc, char* argv[])
 
             if (d % 3 == 1)
                 Op = R;
-            else if (d % 3 = 1)
+            else if (d % 3 == 1)
                 Op = W;
             else
                 Op = X;
