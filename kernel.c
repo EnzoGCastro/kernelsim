@@ -281,7 +281,7 @@ int Pop(int* arr)
 void PushEnd(int* arr, int val)
 {
 
-    for (int i = 5; i > -1; i--)
+    for (int i = 4; i > -1; i--)
     {
         if (arr[i] == -1)
         {
@@ -296,7 +296,7 @@ void PushStart(int* arr, int val)
     if (val == -1)
         return;
 
-    for (int i = 5; i >= 0; i--)
+    for (int i = 4; i >= 0; i--)
         arr[i] = arr[i-1];
 
     arr[0] = val;
