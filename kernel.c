@@ -8,8 +8,8 @@ int executing[5];
 int waitingIn1[5];
 int waitingIn2[5];
 
-int accessed1[0];
-int accessed2[0];
+int accessed1[5];
+int accessed2[5];
 
 int interFd;
 
@@ -24,6 +24,8 @@ void CreateInterController();
 void CreateApps();
 
 void SetState(int ap, int state);
+
+void PrintAppStates();
 
 void SaveContext();
 void LoadContext();
@@ -41,19 +43,12 @@ void CtrlcSigHandler(int signal)
     if (paused == 0)
     {
         SaveContext();
-
-        for (int i = 0; i < 5; i++)
-        {
-            printf("AP%d:\n", i + 1);
-            printf("  PC: %d\n", appContexts[i].PC);
-            printf("  State: %s\n", AppStateToStr(appStates[i]));
-            printf("  Accessed D1: %d times\n", accessed1[i]);
-            printf("  Accessed D2: %d times\n", accessed2[i]);
-        }
+        PrintAppStates();
     }
     else
     {
         LoadContext();
+        printf("\n  Unpaused\n");
     }
 
     paused = !paused;
@@ -63,6 +58,9 @@ void InterSigHandler(int signal)
 {
     if (paused)
         return;
+
+    printf("\n-----\n");
+    PrintAppStates();
 
     int info;
     while (read(interFd, &info, sizeof(int)) > 0)
@@ -89,7 +87,6 @@ void InterSigHandler(int signal)
             accessed1[waiter] += 1;
             PushStart(executing, waiter);
             
-
             LoadContext();
         }
         else if (info == D2)
@@ -110,27 +107,28 @@ void InterSigHandler(int signal)
 
 void AppSigHandler(int signal)
 {
-    int info[2];
-    while (read(syscallFd, &info, sizeof(int) * 2) > 0)
+    int info;
+    while (read(syscallFd, &info, sizeof(int)) > 0)
     {
         SaveContext();
 
-        appStates[executing[0]] = info[0] + info[1] * 10;
+        if (info == FINISH)
+            appStates[Pop(executing)] = FINISHED;
+        else
+        {
+            int input = info;
+            read(syscallFd, &info, sizeof(int));
+            int access = info;
 
-        if (info[0] == D1)
-            PushEnd(waitingIn1, Pop(executing));
-        else if (info[0] == D2)
-            PushEnd(waitingIn2, Pop(executing));
+            appStates[executing[0]] = input + access * 10;
 
+            if (input == D1)
+                PushEnd(waitingIn1, Pop(executing));
+            else if (input == D2)
+                PushEnd(waitingIn2, Pop(executing));
+        }
         LoadContext();
     }
-}
-
-void FinishedSigHandler(int signal)
-{
-    SaveContext();
-    appStates[Pop(executing)] = FINISHED;
-    LoadContext();
 }
 
 //
@@ -142,7 +140,6 @@ int main()
     signal(SIGINT, CtrlcSigHandler);
     signal(SIGUSR1, InterSigHandler);
     signal(SIGUSR2, AppSigHandler);
-    signal(SIGCHLD, FinishedSigHandler);
 
     for (int i = 0; i < 5; i++)
     {
@@ -157,7 +154,8 @@ int main()
     CreateInterController();
     CreateApps();
 
-    pause();
+    while(1)
+        pause();
 
     return 0;
 }
@@ -171,11 +169,15 @@ void CreateInterController()
     int fd[2];
     pipe(fd);
     interFd = fd[0];
+    
+    char arg1[11] = "0000000000";
 
-    char* args[2] = {
-        "",
-        "0000000000"
+    char* args[3] = {
+        "./intercontroller",
+        arg1,
+        NULL
     };
+
     itoa(fd[1], args[1], 10);
 
     int pid = fork();
@@ -198,10 +200,14 @@ void CreateApps()
     pipe(fd);
     syscallFd = fd[0];
 
-    char* args[3] = {
-        "",
-        "0000000000",
-        "0000000000"
+    char arg1[11] = "0000000000";
+    char arg2[11] = "0000000000";
+
+    char* args[4] = {
+        "./ax",
+        arg1,
+        arg2,
+        NULL
     };
     itoa(shm, args[1], 10);
     itoa(fd[1], args[2], 10);
@@ -209,9 +215,7 @@ void CreateApps()
     for (int i = 0; i < 5; i++)
     {
         executing[i] = i;
-        waitingIn1[i] = -1;
-        waitingIn2[i] = -1;
-        appStates[i] = READY;
+        appStates[i] = i == 0 ? EXECUTING : READY;
 
         int pid = fork();
         if (pid == 0)
@@ -222,13 +226,11 @@ void CreateApps()
         }
 
         appPids[i] = pid;
-        kill(SIGSTOP, pid);
+        if (i != 0)
+            kill(pid, SIGSTOP);
     }
 
     close(fd[1]);
-
-    appStates[0] = EXECUTING;
-    kill(SIGCONT, appPids[0]);
 }
 
 //
@@ -243,6 +245,18 @@ void SetState(int app, int state)
     appStates[app] = state;
 }
 
+void PrintAppStates()
+{
+    for (int i = 0; i < 5; i++)
+    {
+        printf("AP%d:\n", i + 1);
+        printf("  PC: %d\n", appContexts[i].PC);
+        printf("  State: %s\n", AppStateToStr(appStates[i]));
+        printf("  Accessed D1: %d times\n", accessed1[i]);
+        printf("  Accessed D2: %d times\n", accessed2[i]);
+    }
+}
+
 void SaveContext()
 {
     if (executing[0] == -1)
@@ -250,7 +264,7 @@ void SaveContext()
 
     appContexts[executing[0]] = *appContextShm;
 
-    kill(SIGSTOP, appPids[executing[0]]);
+    kill(appPids[executing[0]], SIGSTOP);
 }
 
 void LoadContext()
@@ -260,12 +274,11 @@ void LoadContext()
     
     *appContextShm = appContexts[executing[0]];
 
-    kill(SIGCONT, appPids[executing[0]]);
+    kill(appPids[executing[0]], SIGCONT);
 }
 
 int Pop(int* arr)
 {
-
     int temp = arr[0];
     
     arr[0] = -1;
@@ -280,8 +293,7 @@ int Pop(int* arr)
 
 void PushEnd(int* arr, int val)
 {
-
-    for (int i = 4; i > -1; i--)
+    for (int i = 0; i < 5; i++)
     {
         if (arr[i] == -1)
         {
@@ -296,10 +308,8 @@ void PushStart(int* arr, int val)
     if (val == -1)
         return;
 
-    for (int i = 4; i >= 0; i--)
-        arr[i] = arr[i-1];
+    for (int i = 4; i > 0; i--)
+        arr[i] = arr[i - 1];
 
     arr[0] = val;
-
-    return;
 }

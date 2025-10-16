@@ -11,11 +11,11 @@ int main(int argc, char* argv[])
 
     while(1)
     {
-        sleep(0.5);
+        usleep(500000);
 
         w = CLOCK;
         write(interFd, &w, sizeof(int));
-
+        
         int randomNum = rand() % (1000); 
 
         if (randomNum < 100)

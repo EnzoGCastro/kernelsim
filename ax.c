@@ -10,7 +10,6 @@ void _syscall(int Dx, int Op)
     write(syscallFd, &Dx, sizeof(int));
     write(syscallFd, &Op, sizeof(int));
     kill(SIGUSR2, getppid());
-    context->PC++;
 }
 
 int main(int argc, char* argv[])
@@ -18,14 +17,19 @@ int main(int argc, char* argv[])
     context = shmat(atoi(argv[1]), 0, 0);
     syscallFd = atoi(argv[2]);
 
+    context->PC = 0;
+
+    srand(time(NULL) + getpid());
+
     int Dx;
     int Op;
-
     while (context->PC < MAX)
     {
-        sleep(0.5);
+        usleep(500000);
+        context->PC++;
+        
         int d = rand() % 100;
-        if (d < 15)
+        if (d < 15 )
         { // generate a random syscall
             if (d % 2)
                 Dx = D1;
@@ -41,8 +45,11 @@ int main(int argc, char* argv[])
             
             _syscall(Dx, Op);
         }
-        sleep(0.5);
     }
+
+    int w = FINISH;
+    write(syscallFd, &w, sizeof(int));
+    kill(SIGUSR2, getppid());
 
     return 0;
 }
