@@ -45,6 +45,7 @@ void CtrlcSigHandler(int signal)
 {
     if (paused == 0)
     {
+        paused = 1;
         SaveContext();
         PrintAppStates();
     }
@@ -52,9 +53,9 @@ void CtrlcSigHandler(int signal)
     {
         LoadContext();
         printf("\n  Unpaused\n");
+        paused = 0;
     }
 
-    paused = !paused;
 }
 
 void InterSigHandler(int signal)
@@ -168,7 +169,8 @@ int main()
     CreateInterController();
     CreateApps();
 
-    while(1){}
+    while(1){
+    }
 
     return 0;
 }
@@ -279,9 +281,10 @@ void SaveContext()
     if (executing[0] == -1)
         return;
 
-    appContexts[executing[0]] = *appContextShm;
 
     kill(appPids[executing[0]], SIGSTOP);
+    appContexts[executing[0]] = *appContextShm;
+
 }
 
 void LoadContext()
@@ -289,8 +292,8 @@ void LoadContext()
     if (executing[0] == -1)
         return;
     
-    *appContextShm = appContexts[executing[0]];
 
+    *appContextShm = appContexts[executing[0]];
     kill(appPids[executing[0]], SIGCONT);
 }
 

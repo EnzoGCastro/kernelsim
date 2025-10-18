@@ -2,8 +2,13 @@
 
 int interFd; // pipe para sinais de clock e input
 
+void CtrlcSigHandler(int signal){
+    return;
+}
+
 int main(int argc, char* argv[])
 {
+    signal(SIGINT, CtrlcSigHandler);
     interFd = atoi(argv[1]);
     int parentId = getppid();
 

@@ -15,8 +15,13 @@ void _syscall(int Dx, int Op)
     kill(getppid(), SIGUSR2);
 }
 
+void CtrlcSigHandler(int signal){
+    return;
+}
+
 int main(int argc, char* argv[])
 {
+    signal(SIGINT, CtrlcSigHandler);
     context = shmat(atoi(argv[1]), 0, 0);
     syscallFd = atoi(argv[2]);
 
