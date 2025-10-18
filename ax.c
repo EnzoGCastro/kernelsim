@@ -1,15 +1,18 @@
 #include "kernel.h"
 
-#define MAX 100
-
 AppContext* context;
 int syscallFd; // pipe para dados do syscall
+int myPid;
 
 void _syscall(int Dx, int Op)
 {
-    write(syscallFd, &Dx, sizeof(int));
-    write(syscallFd, &Op, sizeof(int));
-    kill(SIGUSR2, getppid());
+    int info[3] = {
+        myPid,
+        Dx,
+        Op
+    };
+    write(syscallFd, &info, sizeof(int) * 3);
+    kill(getppid(), SIGUSR2);
 }
 
 int main(int argc, char* argv[])
@@ -21,15 +24,16 @@ int main(int argc, char* argv[])
 
     srand(time(NULL) + getpid());
 
+    myPid = getpid();
     int Dx;
     int Op;
-    while (context->PC < MAX)
+    while (context->PC < PC_MAX)
     {
-        usleep(500000);
+        usleep(TIME_FRAME_USEC);
         context->PC++;
         
         int d = rand() % 100;
-        if (d < 15 )
+        if (d < REQUEST_INPUT_CHANCE_100)
         { // generate a random syscall
             if (d % 2)
                 Dx = D1;
@@ -47,9 +51,12 @@ int main(int argc, char* argv[])
         }
     }
 
-    int w = FINISH;
-    write(syscallFd, &w, sizeof(int));
-    kill(SIGUSR2, getppid());
+    int info[2] = {
+        myPid,
+        FINISH
+    };
+    write(syscallFd, &info, sizeof(int) * 2);
+    kill(getppid(), SIGUSR2);
 
     return 0;
 }

@@ -30,7 +30,10 @@ void PrintAppStates();
 void SaveContext();
 void LoadContext();
 
+int GetPidIndex(int pid);
+
 int Pop(int* arr);
+int PopIndex(int* arr, int index);
 void PushEnd(int* arr, int val);
 void PushStart(int* arr, int val);
 
@@ -59,9 +62,6 @@ void InterSigHandler(int signal)
     if (paused)
         return;
 
-    printf("\n-----\n");
-    PrintAppStates();
-
     int info;
     while (read(interFd, &info, sizeof(int)) > 0)
     {
@@ -79,54 +79,68 @@ void InterSigHandler(int signal)
         else if (info == D1)
         {
             if (waitingIn1[0] == -1)
-                return;
+                continue;
 
             SaveContext();
             SetState(executing[0], READY);
             int waiter = Pop(waitingIn1);
             accessed1[waiter] += 1;
             PushStart(executing, waiter);
-            
             LoadContext();
         }
         else if (info == D2)
         {
             if (waitingIn2[0] == -1)
-                return;
+                continue;
 
             SaveContext();
             SetState(executing[0], READY);
-
             int waiter = Pop(waitingIn2);
             accessed2[waiter] += 1;
             PushStart(executing, waiter);
             LoadContext();
         }
     }
+
+    printf("\n-----\n");
+    PrintAppStates();
 }
 
 void AppSigHandler(int signal)
 {
-    int info;
-    while (read(syscallFd, &info, sizeof(int)) > 0)
+    int pid;
+    while (read(syscallFd, &pid, sizeof(int)) > 0)
     {
+        int info;
+        read(syscallFd, &info, sizeof(int));
+
         SaveContext();
 
         if (info == FINISH)
-            appStates[Pop(executing)] = FINISHED;
+        {
+            int i = GetPidIndex(pid);
+            int* arr;
+            if (appStates[i] == READY || appStates[i] == EXECUTING)
+                arr = executing;
+            else if (appStates[i] % 10 == D1)
+                arr = waitingIn1;
+            else if (appStates[i] % 10 == D2)
+                arr = waitingIn2;
+            appStates[PopIndex(arr, i)] = FINISHED;
+        }
         else
         {
-            int input = info;
-            read(syscallFd, &info, sizeof(int));
-            int access = info;
+            int access;
+            read(syscallFd, &access, sizeof(int));
 
-            appStates[executing[0]] = input + access * 10;
+            appStates[executing[0]] = info + (access * 10);
 
-            if (input == D1)
-                PushEnd(waitingIn1, Pop(executing));
-            else if (input == D2)
-                PushEnd(waitingIn2, Pop(executing));
+            if (info == D1)
+                PushEnd(waitingIn1, PopIndex(executing, GetPidIndex(pid)));
+            else if (info == D2)
+                PushEnd(waitingIn2, PopIndex(executing, GetPidIndex(pid)));
         }
+
         LoadContext();
     }
 }
@@ -154,8 +168,7 @@ int main()
     CreateInterController();
     CreateApps();
 
-    while(1)
-        pause();
+    while(1){}
 
     return 0;
 }
@@ -168,6 +181,8 @@ void CreateInterController()
 {
     int fd[2];
     pipe(fd);
+    int flags = fcntl(fd[0], F_GETFL, 0);
+    fcntl(fd[0], F_SETFL, flags | O_NONBLOCK);
     interFd = fd[0];
     
     char arg1[11] = "0000000000";
@@ -198,6 +213,8 @@ void CreateApps()
     
     int fd[2];
     pipe(fd);
+    int flags = fcntl(fd[0], F_GETFL, 0);
+    fcntl(fd[0], F_SETFL, flags | O_NONBLOCK);
     syscallFd = fd[0];
 
     char arg1[11] = "0000000000";
@@ -312,4 +329,31 @@ void PushStart(int* arr, int val)
         arr[i] = arr[i - 1];
 
     arr[0] = val;
+}
+
+int GetPidIndex(int pid)
+{
+    for (int i = 0; i < 5; i++)
+        if (appPids[i] == pid)
+            return i;
+    return -1;
+}
+
+int PopIndex(int* arr, int index)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        if(arr[i] == index)
+        {
+            arr[i] = -1;
+            for (int j = i; j < 4; j++)
+            {
+                arr[j] = arr[j+1];
+                arr[j+1] = -1;
+            }
+            break;
+        }
+    }
+
+    return index;
 }

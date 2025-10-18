@@ -59,6 +59,8 @@
   "files.associations": {
     "kernel.h": "c",
     "signal.h": "c",
-    "stdlib.h": "c"
+    "stdlib.h": "c",
+    "fcntl.h": "c",
+    "time.h": "c"
   }
 }

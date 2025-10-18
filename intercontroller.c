@@ -11,14 +11,14 @@ int main(int argc, char* argv[])
 
     while(1)
     {
-        usleep(500000);
+        usleep(TIME_FRAME_USEC);
 
         w = CLOCK;
         write(interFd, &w, sizeof(int));
         
         int randomNum = rand() % (1000); 
 
-        if (randomNum < 100)
+        if (randomNum < SEND_D1_CHANCE_1000)
         {
             w = D1;
             write(interFd, &w, sizeof(int));
@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
 
         randomNum = rand() % (1000); 
 
-        if (randomNum < 5)
+        if (randomNum < SEND_D2_CHANCE_1000)
         {
             w = D2;
             write(interFd, &w, sizeof(int));

@@ -8,6 +8,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h> 
+
+#define TIME_FRAME_USEC 500000
+#define PC_MAX 100
+#define SEND_D1_CHANCE_1000 100
+#define SEND_D2_CHANCE_1000 5
+#define REQUEST_INPUT_CHANCE_100 15
 
 #define CLOCK 0 // Code for clock tick sent by inter controller
 
