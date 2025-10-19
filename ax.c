@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
 
             if (d % 3 == 1)
                 Op = R;
-            else if (d % 3 == 1)
+            else if (d % 3 == 2)
                 Op = W;
             else
                 Op = X;

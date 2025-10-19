@@ -102,9 +102,6 @@ void InterSigHandler(int signal)
             LoadContext();
         }
     }
-
-    printf("\n-----\n");
-    PrintAppStates();
 }
 
 void AppSigHandler(int signal)
