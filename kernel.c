@@ -13,7 +13,7 @@ int accessed2[5];
 
 int interFd;
 
-AppContext* appContextShm;
+AppData* appData;
 int syscallFd;
 
 int paused = 0;
@@ -63,6 +63,9 @@ void InterSigHandler(int signal)
     if (paused)
         return;
 
+    if (pthread_mutex_trylock(&(appData->appMutex)))
+        return;
+
     int info;
     while (read(interFd, &info, sizeof(int)) > 0)
     {
@@ -79,6 +82,7 @@ void InterSigHandler(int signal)
         }
         else if (info == D1)
         {
+            printf("D1\n");
             if (waitingIn1[0] == -1)
                 continue;
 
@@ -91,6 +95,7 @@ void InterSigHandler(int signal)
         }
         else if (info == D2)
         {
+            printf("D2\n");
             if (waitingIn2[0] == -1)
                 continue;
 
@@ -102,45 +107,43 @@ void InterSigHandler(int signal)
             LoadContext();
         }
     }
+
+    pthread_mutex_unlock(&(appData->appMutex));
+
+    PrintAppStates();
+    printf("\n");
 }
 
 void AppSigHandler(int signal)
 {
-    int pid;
-    while (read(syscallFd, &pid, sizeof(int)) > 0)
+    if (appData->appSendingData == 0)
+        return;
+
+    int info;
+    int Op;
+    read(syscallFd, &info, sizeof(int));
+    read(syscallFd, &Op, sizeof(int));
+        
+    SaveContext();
+
+    if (info == FINISH)
     {
-        int info;
-        read(syscallFd, &info, sizeof(int));
-
-        SaveContext();
-
-        if (info == FINISH)
-        {
-            int i = GetPidIndex(pid);
-            int* arr;
-            if (appStates[i] == READY || appStates[i] == EXECUTING)
-                arr = executing;
-            else if (appStates[i] % 10 == D1)
-                arr = waitingIn1;
-            else if (appStates[i] % 10 == D2)
-                arr = waitingIn2;
-            appStates[PopIndex(arr, i)] = FINISHED;
-        }
-        else
-        {
-            int access;
-            read(syscallFd, &access, sizeof(int));
-
-            appStates[executing[0]] = info + (access * 10);
-
-            if (info == D1)
-                PushEnd(waitingIn1, PopIndex(executing, GetPidIndex(pid)));
-            else if (info == D2)
-                PushEnd(waitingIn2, PopIndex(executing, GetPidIndex(pid)));
-        }
-
-        LoadContext();
+        appStates[Pop(executing)] = FINISHED;
     }
+    else
+    {
+        appStates[executing[0]] = info + (Op * 10);
+
+        if (info == D1)
+            PushEnd(waitingIn1, Pop(executing));
+        else if (info == D2)
+            PushEnd(waitingIn2, Pop(executing));
+    }
+
+    pthread_mutex_unlock(&(appData->appMutex));
+    appData->appSendingData = 0;
+
+    LoadContext();
 }
 
 //
@@ -151,7 +154,7 @@ int main()
 {
     signal(SIGINT, CtrlcSigHandler);
     signal(SIGUSR1, InterSigHandler);
-    signal(SIGUSR2, AppSigHandler);
+    signal(SIGCHLD, AppSigHandler);
 
     for (int i = 0; i < 5; i++)
     {
@@ -207,9 +210,9 @@ void CreateInterController()
 
 void CreateApps()
 {
-    int shm = shmget(IPC_PRIVATE, sizeof(AppContext), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
-    appContextShm = (AppContext*)shmat(shm, 0, 0);
-    
+    int shm = shmget(IPC_PRIVATE, sizeof(AppData), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+    appData = (AppData*)shmat(shm, 0, 0);
+
     int fd[2];
     pipe(fd);
     int flags = fcntl(fd[0], F_GETFL, 0);
@@ -278,19 +281,16 @@ void SaveContext()
     if (executing[0] == -1)
         return;
 
-
     kill(appPids[executing[0]], SIGSTOP);
-    appContexts[executing[0]] = *appContextShm;
-
+    appContexts[executing[0]] = appData->context;
 }
 
 void LoadContext()
 {
     if (executing[0] == -1)
         return;
-    
 
-    *appContextShm = appContexts[executing[0]];
+    appData->context = appContexts[executing[0]];
     kill(appPids[executing[0]], SIGCONT);
 }
 

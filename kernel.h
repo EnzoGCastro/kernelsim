@@ -9,11 +9,12 @@
 #include <unistd.h>
 #include <time.h>
 #include <fcntl.h> 
+#include <pthread.h>
 
 #define TIME_FRAME_USEC 500000
 #define PC_MAX 100
-#define SEND_D1_CHANCE_1000 100
-#define SEND_D2_CHANCE_1000 5
+#define SEND_D1_CHANCE_1000 100 // Out of 1000
+#define SEND_D2_CHANCE_1000 5 // Out of 1000
 #define REQUEST_INPUT_CHANCE_100 15
 
 #define CLOCK 0 // Code for clock tick sent by inter controller
@@ -43,6 +44,13 @@ typedef struct appContext
 {
     int PC;
 } AppContext;
+
+typedef struct appData
+{
+    AppContext context;
+    pthread_mutex_t appMutex;
+    int appSendingData;
+} AppData;
 
 const char* FINISHED_STR = "Finished";
 const char* EXECUTING_STR = "Executing";

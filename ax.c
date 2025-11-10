@@ -1,18 +1,21 @@
 #include "kernel.h"
 
-AppContext* context;
+AppData* data;
 int syscallFd; // pipe para dados do syscall
 int myPid;
 
 void _syscall(int Dx, int Op)
 {
-    int info[3] = {
-        myPid,
+    while (pthread_mutex_trylock(&(data->appMutex)))
+    {}
+
+    data->appSendingData = 1;
+    int info[2] = {
         Dx,
         Op
     };
-    write(syscallFd, &info, sizeof(int) * 3);
-    kill(getppid(), SIGUSR2);
+    write(syscallFd, &info, sizeof(int) * 2);
+    raise(SIGSTOP);
 }
 
 void CtrlcSigHandler(int signal){
@@ -22,20 +25,20 @@ void CtrlcSigHandler(int signal){
 int main(int argc, char* argv[])
 {
     signal(SIGINT, CtrlcSigHandler);
-    context = shmat(atoi(argv[1]), 0, 0);
+    data = shmat(atoi(argv[1]), 0, 0);
     syscallFd = atoi(argv[2]);
 
-    context->PC = 0;
+    data->context.PC = 0;
 
     srand(time(NULL) + getpid());
 
     myPid = getpid();
     int Dx;
     int Op;
-    while (context->PC < PC_MAX)
+    while (data->context.PC < PC_MAX)
     {
         usleep(TIME_FRAME_USEC);
-        context->PC++;
+        data->context.PC++;
         
         int d = rand() % 100;
         if (d < REQUEST_INPUT_CHANCE_100)
@@ -55,13 +58,8 @@ int main(int argc, char* argv[])
             _syscall(Dx, Op);
         }
     }
-
-    int info[2] = {
-        myPid,
-        FINISH
-    };
-    write(syscallFd, &info, sizeof(int) * 2);
-    kill(getppid(), SIGUSR2);
+    
+    _syscall(FINISH, 0);
 
     return 0;
 }
