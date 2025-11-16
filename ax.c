@@ -4,21 +4,20 @@ AppData* data;
 int syscallFd; // pipe para dados do syscall
 int myPid;
 
-void _syscall(int Dx, int Op)
+void _syscall(char* info, int infoLen)
 {
     while (pthread_mutex_trylock(&(data->appMutex)))
     {}
 
     data->appSendingData = 1;
-    int info[2] = {
-        Dx,
-        Op
-    };
-    write(syscallFd, &info, sizeof(int) * 2);
+
+    write(syscallFd, &infoLen, sizeof(int));
+    write(syscallFd, info, sizeof(char) * infoLen);
     raise(SIGSTOP);
 }
 
-void CtrlcSigHandler(int signal){
+void CtrlcSigHandler(int signal)
+{
     return;
 }
 
@@ -42,24 +41,46 @@ int main(int argc, char* argv[])
         
         int d = rand() % 100;
         if (d < REQUEST_INPUT_CHANCE_100)
-        { // generate a random syscall
+        {
+            // generate a random syscall
+
             if (d % 2)
                 Dx = D1;
             else
                 Dx= D2;
 
-            if (d % 3 == 1)
-                Op = R;
-            else if (d % 3 == 2)
-                Op = W;
-            else
-                Op = X;
-            
-            _syscall(Dx, Op);
+            d = d % 5;
+            switch(d)
+            {
+            case(0):
+                Op = WT;
+                break;
+            case(1):
+                Op = RD;
+                break;
+            case(2):
+                Op = AD;
+                break;
+            case(3):
+                Op = RM;
+                break;
+            case(4):
+                Op = LS;
+                break;
+            }
+                
+            char info[2] = {
+                Dx,
+                Op
+            };
+            _syscall(info, 2);
         }
     }
     
-    _syscall(FINISH, 0);
+    char finishInfo[1] = {
+        FINISH
+    };
+    _syscall(finishInfo, 1);
 
     return 0;
 }

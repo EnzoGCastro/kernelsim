@@ -119,24 +119,25 @@ void AppSigHandler(int signal)
     if (appData->appSendingData == 0)
         return;
 
-    int info;
-    int Op;
-    read(syscallFd, &info, sizeof(int));
-    read(syscallFd, &Op, sizeof(int));
-        
+    int infoLen;
+    read(syscallFd, &infoLen, sizeof(int));
+
+    char info[1024];
+    read(syscallFd, info, sizeof(char) * infoLen);
+    
     SaveContext();
 
-    if (info == FINISH)
+    if (info[0] == FINISH)
     {
         appStates[Pop(executing)] = FINISHED;
     }
     else
     {
-        appStates[executing[0]] = info + (Op * 10);
+        appStates[executing[0]] = info[0] + (info[1] * 10);
 
-        if (info == D1)
+        if (info[0] == D1)
             PushEnd(waitingIn1, Pop(executing));
-        else if (info == D2)
+        else if (info[0] == D2)
             PushEnd(waitingIn2, Pop(executing));
     }
 
