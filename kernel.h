@@ -8,14 +8,20 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <pthread.h>
+#include <string.h>
 
 #define TIME_FRAME_USEC 500000
 #define PC_MAX 100
 #define SEND_D1_CHANCE_1000 100 // Out of 1000
 #define SEND_D2_CHANCE_1000 5 // Out of 1000
 #define REQUEST_INPUT_CHANCE_100 15
+#define MAX_PATH_LEN 256
+#define MAX_DIR_LEN 256
+#define PAYLOAD_BLOCK_SIZE 16
+#define PAYLOAD_MAX_BLOCKS 8
+#define MAX_SYSCALL_INFO_SIZE 1024
 
 #define CLOCK 0 // Code for clock tick sent by inter controller
 

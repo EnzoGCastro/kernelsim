@@ -37,6 +37,13 @@ int PopIndex(int* arr, int index);
 void PushEnd(int* arr, int val);
 void PushStart(int* arr, int val);
 
+void syscallFINISH(char* info);
+void syscallWT(char* info);
+void syscallRD(char* info);
+void syscallAD(char* info);
+void syscallRM(char* info);
+void syscallLS(char* info);
+
 //
 // Signals
 //
@@ -122,23 +129,31 @@ void AppSigHandler(int signal)
     int infoLen;
     read(syscallFd, &infoLen, sizeof(int));
 
-    char info[1024];
+    char info[MAX_SYSCALL_INFO_SIZE];
     read(syscallFd, info, sizeof(char) * infoLen);
     
     SaveContext();
 
-    if (info[0] == FINISH)
+    switch (info[0])
     {
-        appStates[Pop(executing)] = FINISHED;
-    }
-    else
-    {
-        appStates[executing[0]] = info[0] + (info[1] * 10);
-
-        if (info[0] == D1)
-            PushEnd(waitingIn1, Pop(executing));
-        else if (info[0] == D2)
-            PushEnd(waitingIn2, Pop(executing));
+    case FINISH:
+        syscallFINISH(info);
+        break;
+    case WT:
+        syscallWT(info);
+        break;
+    case RD:
+        syscallRD(info);
+        break;
+    case AD:
+        syscallAD(info);
+        break;
+    case RM:
+        syscallRM(info);
+        break;
+    case LS:
+        syscallLS(info);
+        break;
     }
 
     pthread_mutex_unlock(&(appData->appMutex));
@@ -357,4 +372,158 @@ int PopIndex(int* arr, int index)
     }
 
     return index;
+}
+
+void syscallFINISH(char* info)
+{
+    appStates[Pop(executing)] = FINISHED;
+}
+
+void syscallWT(char* info)
+{
+    info++;
+
+    char path[MAX_PATH_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        path[i] = *info;
+        info++;
+        if (path[i] == '\0')
+            break;
+    }
+
+    unsigned char payloadSize = *info;
+    info++;
+
+    char payload[PAYLOAD_BLOCK_SIZE * PAYLOAD_MAX_BLOCKS];
+    for (int i = 0; i < payloadSize; i++)
+    {
+        payload[i] = *info;
+        info++;
+    }
+
+    unsigned char offset = *info;
+
+    /*
+    printf("kernel - write ---\n");
+    printf("path: %s\n", path);
+    printf("payloadSize: %d\n", payloadSize);
+    printf("payload: ");
+    for (int i = 0; i < payloadSize; i++)
+        printf("%c", payload[i]);
+    printf("\n");
+    printf("offset: %d\n", offset);
+    printf("---\n");
+    */
+}
+
+void syscallRD(char* info)
+{
+    info++;
+
+    char path[MAX_PATH_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        path[i] = *info;
+        info++;
+        if (path[i] == '\0')
+            break;
+    }
+
+    char charFd[4];
+    for (int i = 0; i < 4; i++)
+    {
+        charFd[i] = *info;
+        info++;
+    }
+    int fd = *((int*)charFd);
+
+    unsigned char offset = *info;
+
+    /*
+    printf("kernel - read ---\n");
+    printf("path: %s\n", path);
+    printf("fd: %d\n", fd);
+    printf("offset: %d\n", offset);
+    printf("---\n");
+    */
+}
+
+void syscallAD(char* info)
+{
+    info++;
+
+    char path[MAX_PATH_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        path[i] = *info;
+        info++;
+        if (path[i] == '\0')
+            break;
+    }
+
+    char dir[MAX_DIR_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        dir[i] = *info;
+        info++;
+        if (dir[i] == '\0')
+            break;
+    }
+
+    /*
+    printf("kernel - add ---\n");
+    printf("path: %s\n", path);
+    printf("dir: %s\n", dir);
+    printf("---\n");
+    */
+}
+
+void syscallRM(char* info)
+{
+    info++;
+
+    char path[MAX_PATH_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        path[i] = *info;
+        info++;
+        if (path[i] == '\0')
+            break;
+    }
+
+    /*
+    printf("kernel - remove ---\n");
+    printf("path: %s\n", path);
+    printf("---\n");
+    */
+}
+
+void syscallLS(char* info)
+{
+    info++;
+
+    char path[MAX_PATH_LEN];
+    for (int i = 0; i < MAX_PATH_LEN; i++)
+    {
+        path[i] = *info;
+        info++;
+        if (path[i] == '\0')
+            break;
+    }
+
+    char charFd[4];
+    for (int i = 0; i < 4; i++)
+    {
+        charFd[i] = *info;
+        info++;
+    }
+    int fd = *((int*)charFd);
+
+    /*
+    printf("kernel - list ---\n");
+    printf("path: %s\n", path);
+    printf("fd: %d\n", fd);
+    printf("---\n");
+    */
 }
