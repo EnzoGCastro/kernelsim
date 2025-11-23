@@ -2,6 +2,9 @@
  * udpclient.c - A simple UDP client
  * usage: udpclient <host> <port>
  */
+
+#include "udpclient.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,26 +19,19 @@
 /* 
  * error - wrapper for perror
  */
-void error(char *msg) {
+void error(char *msg)
+{
     perror(msg);
     exit(0);
 }
 
-int main(int argc, char **argv) {
-    int sockfd, portno, n;
+int setupUdpClient(char* hostname, int portno)
+{
+    int sockfd, n;
     int serverlen;
     struct sockaddr_in serveraddr;
     struct hostent *server;
-    char *hostname;
     char buf[BUFSIZE];
-
-    /* check command line arguments */
-    if (argc != 3) {
-       fprintf(stderr,"usage: %s <hostname> <port>\n", argv[0]);
-       exit(0);
-    }
-    hostname = argv[1];
-    portno = atoi(argv[2]);
 
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);

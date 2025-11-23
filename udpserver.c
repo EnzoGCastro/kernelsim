@@ -3,6 +3,8 @@
  * usage: udpserver <port>
  */
 
+#include "udpserver.h"
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -18,20 +20,24 @@
 /*
  * error - wrapper for perror
  */
-void error(char *msg) {
+void error(char *msg)
+{
   perror(msg);
   exit(1);
 }
-int parse (char *buf, int *cmd, char *name) {
+
+int parse (char *buf, int *cmd, char *name)
+{
     char *cmdstr;
 
     cmdstr = strtok(buf," ");
         name = strtok(NULL,"\0");
     cmd = atoi(cmdstr);
 }
-int main(int argc, char **argv) {
+
+int setupUdpServer(int portno)
+{
   int sockfd; /* socket */
-  int portno; /* port to listen on */
   int clientlen; /* byte size of client's address */
   struct sockaddr_in serveraddr; /* server's addr */
   struct sockaddr_in clientaddr; /* client addr */
@@ -43,15 +49,6 @@ int main(int argc, char **argv) {
 
   char name[BUFSIZE];   // name of the file received from client
   int cmd;              // cmd received from client
-
-  /*
-   * check command line arguments
-   */
-  if (argc != 2) {
-    fprintf(stderr, "usage: %s <port>\n", argv[0]);
-    exit(1);
-  }
-  portno = atoi(argv[1]);
 
   /*
    * socket: create the parent socket
