@@ -100,6 +100,8 @@ int setupUdpServer(int portno)
     /*
      * gethostbyaddr: determine who sent the datagram
      */
+    
+     
     hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr,
 			  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
     if (hostp == NULL)

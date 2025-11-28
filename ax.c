@@ -123,20 +123,20 @@ void callWrite()
     strcpy(info + size, path);
     size += strlen(path) + 1;
 
-    unsigned  char payloadSize = ((rand() % PAYLOAD_MAX_BLOCKS) + 1) * PAYLOAD_BLOCK_SIZE;
+    unsigned  char payloadSize = (rand() % PAYLOAD_MAX_BLOCKS) + 1;
     info[size] = payloadSize;
     size++;
 
     char payload[PAYLOAD_BLOCK_SIZE * PAYLOAD_MAX_BLOCKS];
     int p = rand() % 10 + '0';
-    for (int i = 0; i < payloadSize; i++)
+    for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
     {
         payload[i] = p;
         info[size] = payload[i];
         size++;
     }
 
-    unsigned char offset = (rand() % PAYLOAD_MAX_BLOCKS) * PAYLOAD_BLOCK_SIZE;
+    unsigned char offset = rand() % PAYLOAD_MAX_BLOCKS;
     info[size] = offset;
     size++;
     
@@ -165,7 +165,7 @@ void callRead()
         size++;
     }
 
-    unsigned char offset = (rand() % PAYLOAD_MAX_BLOCKS) * PAYLOAD_BLOCK_SIZE;
+    unsigned char offset = rand() % PAYLOAD_MAX_BLOCKS;
     info[size] = offset;
     size++;
     
@@ -195,7 +195,7 @@ void callAdd()
     strcpy(info + size, dir);
     size += strlen(dir) + 1;
 
-    unsigned char offset = (rand() % PAYLOAD_MAX_BLOCKS) * PAYLOAD_BLOCK_SIZE;
+    unsigned char offset = rand() % PAYLOAD_MAX_BLOCKS;
     info[size] = offset;
     size++;
 

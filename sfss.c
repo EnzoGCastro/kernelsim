@@ -1,193 +1,271 @@
+#include "sfss.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/dir.h>
+#include <sys/stat.h>
+#include <sys/param.h>
+#include <unistd.h>
 
-#define DIR_T 0
-#define FILE_T 1
+int PathExtendCwd(char* path, char* out);
+void PathAppend(char* path, char* str);
+void PathReturn(char* path);
 
-typedef struct fileDir
-{
-    char name[256];
-    int type;
-    struct fileDir* next;
-    struct fileDir* child;
-} FileDir;
+int Write(char* path, char* payload, int size, int offset);
+int Read(char* path, char* out, int offset);
 
-FileDir* first = NULL;
+int AddDir(char* path, char* new);
+int Remove(char* path);
+int RemoveRecursive(char* path);
 
-FileDir* Find(FileDir* parent, char* name);
-int Insert(char* path, char* name, int type);
-int Erase(char* path);
-void EraseRecursive(FileDir* current, int initial);
+int List(char* path, char* out, int* outStarts, int* total);
 
 int main()
 {
+    char fullPath[MAXPATHLEN];
     int result;
-    result = Insert("", "a1", DIR_T);
-    printf("Inserting a1 at root, result %d\n", result);
+    PathExtendCwd("", fullPath);
+    AddDir(fullPath, "deletemefolder");
+    AddDir(fullPath, "deleteme");
     
-    result = Insert("", "a1", DIR_T);
-    printf("Inserting a1 at root, result %d\n", result);
+    PathExtendCwd("deletemefolder", fullPath);
+    AddDir(fullPath, "deletemeinside");
 
-    result = Insert("", "a2", DIR_T);
-    printf("Inserting a2 at root, result %d\n", result);
+    PathExtendCwd("deleteme.txt", fullPath);
+    result = Write(fullPath, "1234567890123456", 1, 2);
+    printf("Write result %d\n", result);
 
-    result = Insert("a2", "ina2", DIR_T);
-    printf("Inserting ina2 at a2, result %d\n", result);
+    char r[17];
+    r[16] = '\0';
+    result = Read(fullPath, r, 0);
+    printf("Read result %d\n", result);
+    printf("%s\n", r);
+    result = Read(fullPath, r, 1);
+    printf("Read result %d\n", result);
+    printf("%s\n", r);
+    result = Read(fullPath, r, 2);
+    printf("Read result %d\n", result);
+    printf("%s\n", r);
+    result = Read(fullPath, r, 3);
+    printf("Read result %d\n", result);
+    printf("%s\n", r);
 
-    result = Insert("a2/ina2", "inina2", DIR_T);
-    printf("Inserting ina2 at a2, result %d\n", result);
+    PathExtendCwd("", fullPath);
+    char out[MAX_DIR_LEN * MAX_LIST_DIRS];
+    int outStarts[MAX_LIST_DIRS];
+    int total;
+    List(fullPath, out, outStarts, &total);
+    for (int i = 0; i < total; i++)
+        printf("%d: %s\n", outStarts[i], out + outStarts[i]);
+    printf("%d\n", total);
 
-    result = Insert("", "test.txt", FILE_T);
-    printf("Inserting test.txt at root, result %d\n", result);
+    /*
+    result = Remove(fullPath);
+    printf("Operation: Remove existing (recursive). Result: %d\n", result);
+    result = Remove(fullPath);
+    printf("Operation: Remove inexistent. Result: %d\n", result);
+    
+    PathExtendCwd("deleteme", fullPath);
 
-    result = Insert("", "test.txt", FILE_T);
-    printf("Inserting test.txt at root, result %d\n", result);
+    result = Remove(fullPath);
+    printf("Operation: Remove existing (non recursive). Result: %d\n", result);
+    result = Remove(fullPath);
+    printf("Operation: Remove inexistent. Result: %d\n", result);
+    */
 
-    result = Insert("a2/ina2", "test.txt", FILE_T);
-    printf("Inserting test.txt at a2/ina2, result %d\n", result);
-
-    result = Erase("test.txt");
-    printf("Erasing test.txt at root, result %d\n", result);
-
-    result = Insert("", "test.txt", FILE_T);
-    printf("Inserting test.txt at root, result %d\n", result);
-
-    result = Erase("a2");
-    printf("Erasing a2 at root, result %d\n", result);
-
-    result = Insert("a2", "ina2", DIR_T);
-    printf("Inserting ina2 at a2, result %d\n", result);
 }
 
-// Retorna o primeiro filho de parent com name ou NULL caso nao tenha
-// Caso parent seja NULL, assume que e o root e o primeiro filho seria first
-FileDir* Find(FileDir* parent, char* name)
+int PathExtendCwd(char* path, char* out)
 {
-    FileDir* current = parent != NULL ? parent->child : first;
-    while (current != NULL && strcmp(current->name, name))
-        current = current->next;
-    return current;
-}
-
-int Insert(char* path, char* name, int type)
-{
-    if (strlen(name) == 0)
+    if (getcwd(out, MAXPATHLEN) == NULL)
         return 1;
-
-    FileDir* new = (FileDir*)malloc(sizeof(FileDir));
-    new->type = type;
-    strcpy(new->name, name);
-
-    char dir[256];
-    FileDir* current = NULL;
-
-    while (1)
-    {
-        dir[0] = '\0';
-        //Constroi dir ate o primeiro / encontrado ou se chegar ao final do path
-        for (int i = 0; path[0] != '/' && path[0] != '\0'; i++)
-        {
-            dir[i] = path[0];
-            dir[i + 1] = '\0';
-            path++;
-        }
-        
-        // Caso path seja o root, inserimos no lugar do first o new
-        if (current == NULL && path[0] == '\0' && strlen(dir) == 0)
-        {
-            if (Find(current, new->name) != NULL)
-                return 1; // Ja existe algo com esse nome
-            
-            new->next = first;
-            first = new;
-            printf("Inserted %s\n", new->name);
-            return 0;
-        }
-
-        current = Find(current, dir);
-        if (current == NULL)
-            return 1;
-
-        // Se proximo char de path for '\0' insere next como child de current e finaliza a recursao
-        if (path[0] == '\0')
-        {
-            if (current->type == FILE_T)
-                return 1;
-
-            if (Find(current, new->name) != NULL)
-                return 1; // Ja existe algo com esse nome
-
-            new->next = current->child;
-            current->child = new;
-            printf("Inserted %s\n", new->name);
-            return 0;
-        }
-
-        path++;
-        printf("Insert entered %s\n", current->name);
-    }
-
-    return 1;
-}
-
-int Erase(char* path)
-{
-    char dir[256];
-    FileDir* current = first;
-    FileDir* parent = NULL;
-    FileDir* prev = NULL;
     
-    while(1)
-    {
-        dir[0] = '\0';
-        //Constroi dir ate o primeiro / encontrado ou se chegar ao final do path
-        for (int i = 0; path[0] != '/' && path[0] != '\0'; i++)
-        {
-            dir[i] = path[0];
-            dir[i + 1] = '\0';
-            path++;
-        }
-        
-        while (current != NULL && strcmp(current->name, dir))
-        {
-            prev = current;
-            current = prev->next;
-        }
-        
-        if (current == NULL)
-            return 1;
+    while(*out)
+        out++;
+    
+    strcpy(out, SFSS_ROOT_PATH);
+    out += strlen(SFSS_ROOT_PATH);
 
-        if (path[0] == '\0')
-            break;
-        
-        parent = current;
-        current = parent->child;
-        prev = parent;
-        path++;
-    }
-    
-    if (prev == NULL)
-        first = current->next;
-    else if (parent == prev)
-        parent->child = current->next;
-    else
-        prev->next = current->next;
-    
-    EraseRecursive(current, 1);
+    strcpy(out, path);
 
     return 0;
 }
 
-void EraseRecursive(FileDir* current, int initial)
+void PathAppend(char* path, char* str)
 {
-    if (current == NULL)
-        return;
+    int j = -1;
+    for (int i = 0; i < MAXPATHLEN; i++)
+    {
+        if (j == -1)
+        {
+            if (path[i] == '\0')
+            {
+                path[i] = '/';
+                j = 0;
+            }
+        }
+        else
+        {
+            path[i] = str[j];
+            if (str[j] == '\0')
+                break;
+            j++;
+        }
+    }
+}
 
-    if (!initial)
-        EraseRecursive(current->next, 0);
-    EraseRecursive(current->child, 0);
+void PathReturn(char* path)
+{
+    int end = -1;
+    for (int i = 0; i < MAXPATHLEN; i++)
+        if (path[i] == '\0')
+        {
+            end = i;
+            break;
+        }
 
-    printf("Erased %s\n", current->name);
-    free(current);
+    for (int i = end; i >= 0; i--)
+        if (path[i] == '/')
+        {
+            path[i] = '\0';
+            break;
+        }
+}
+
+int Write(char* path, char* payload, int size, int offset)
+{
+    FILE* file = fopen(path, "a");
+    if (file == NULL)
+        return 1;
+
+    struct stat st;
+    if (stat(path, &st))
+        return 1;
+
+    if (st.st_size < offset * PAYLOAD_BLOCK_SIZE)
+    {
+        char whitespaces[PAYLOAD_BLOCK_SIZE];
+        memset(whitespaces, ' ', PAYLOAD_BLOCK_SIZE);
+        int writes = offset - (st.st_size / PAYLOAD_BLOCK_SIZE);
+        for (int i = 0; i < writes; i++)
+            fwrite(whitespaces, sizeof(char), PAYLOAD_BLOCK_SIZE, file);
+    }
+    
+    if (fseek(file, offset * PAYLOAD_BLOCK_SIZE, SEEK_SET))
+        return 1;
+
+    fwrite(payload, sizeof(char), size * PAYLOAD_BLOCK_SIZE, file);
+    fclose(file);
+
+    return 0;
+}
+
+int Read(char* path, char* out, int offset)
+{
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
+        return 1;
+    
+    struct stat st;
+    if (stat(path, &st))
+        return 1;
+
+    if (st.st_size < (offset + 1) * PAYLOAD_BLOCK_SIZE)
+        return 1;
+
+    if (fseek(file, offset * PAYLOAD_BLOCK_SIZE, SEEK_SET))
+        return 1;
+
+    if (fread(out, 1, PAYLOAD_BLOCK_SIZE, file) < PAYLOAD_BLOCK_SIZE)
+        return 1;
+
+    return 0;
+}
+
+int AddDir(char* path, char* new)
+{
+    struct stat st;
+    if (stat(path, &st) || !S_ISDIR(st.st_mode))
+        return 1;
+
+    PathAppend(path, new);
+    if (mkdir(path, 0755))
+        return 1;
+    PathReturn(path);
+
+    return 0;
+}
+
+int Remove(char* path)
+{
+    struct stat st;
+    if (stat(path, &st))
+        return 1;
+
+    if (S_ISDIR(st.st_mode))
+        return RemoveRecursive(path);
+
+    remove(path);
+
+    return 0;
+}
+
+int RemoveRecursive(char* path)
+{
+    struct dirent** files;
+    int count = scandir(path, &files, NULL, alphasort);
+
+    if (count == -1) 
+        return 1;
+
+    for (int i = 2; i < count; i++)
+    {
+        PathAppend(path, files[i]->d_name);
+        
+        if (files[i]->d_type == DT_DIR)
+        {
+            if (RemoveRecursive(path))
+                return 1;
+        }
+        else if (files[i]->d_type == DT_REG)
+            remove(path);
+
+        PathReturn(path);
+    }
+
+    for (int i = 0; i < count; i++)
+        free(files[i]);
+    free(files);
+
+    remove(path);
+
+    return 0;
+}
+
+int List(char* path, char* out, int* outStarts, int* total)
+{
+    struct dirent** files;
+    int count = scandir(path, &files, NULL, alphasort);
+
+    if (count == -1)
+        return 1;
+
+    int c = 0;
+    for (int i = 2; i < count && i < MAX_LIST_DIRS + 2; i++)
+    {
+        outStarts[i - 2] = c;
+        strcpy(out, files[i]->d_name);
+        int len = strlen(files[i]->d_name);
+        out += len + 1;
+        c += len + 1;
+    }
+
+    for (int i = 0; i < count; i++)
+        free(files[i]);
+    free(files);
+
+    *total = count - 2;
+
+    return 0;
 }

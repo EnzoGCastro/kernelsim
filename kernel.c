@@ -396,7 +396,7 @@ void syscallWT(char* info)
     info++;
 
     char payload[PAYLOAD_BLOCK_SIZE * PAYLOAD_MAX_BLOCKS];
-    for (int i = 0; i < payloadSize; i++)
+    for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
     {
         payload[i] = *info;
         info++;
