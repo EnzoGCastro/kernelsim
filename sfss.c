@@ -1,5 +1,7 @@
 #include "sfss.h"
 
+#include "udpserver.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -8,7 +10,7 @@
 #include <sys/param.h>
 #include <unistd.h>
 
-int PathExtendCwd(char* path, char* out);
+int PathExtendCwd(char* path, int ax, char* out);
 void PathAppend(char* path, char* str);
 void PathReturn(char* path);
 
@@ -24,68 +26,120 @@ int List(char* path, char* out, int* outStarts, int* total);
 int main()
 {
     char fullPath[MAXPATHLEN];
-    int result;
-    PathExtendCwd("", fullPath);
-    AddDir(fullPath, "deletemefolder");
-    AddDir(fullPath, "deleteme");
+
+    PathExtendCwd("", -1, fullPath);
     
-    PathExtendCwd("deletemefolder", fullPath);
-    AddDir(fullPath, "deletemeinside");
+    mkdir(fullPath, 0755);
 
-    PathExtendCwd("deleteme.txt", fullPath);
-    result = Write(fullPath, "1234567890123456", 1, 2);
-    printf("Write result %d\n", result);
+    char Ax[3];
+    Ax[0] = 'A';
+    Ax[2] = '\0';
+    for (int i = 0; i < 5; i++)
+    {
+        Ax[1] = '1' + i;
+        PathAppend(fullPath, Ax);
+        mkdir(fullPath, 0755);
+        PathReturn(fullPath);
+    }
 
-    char r[17];
-    r[16] = '\0';
-    result = Read(fullPath, r, 0);
-    printf("Read result %d\n", result);
-    printf("%s\n", r);
-    result = Read(fullPath, r, 1);
-    printf("Read result %d\n", result);
-    printf("%s\n", r);
-    result = Read(fullPath, r, 2);
-    printf("Read result %d\n", result);
-    printf("%s\n", r);
-    result = Read(fullPath, r, 3);
-    printf("Read result %d\n", result);
-    printf("%s\n", r);
+    SetupUdpServer(8000);
 
-    PathExtendCwd("", fullPath);
-    char out[MAX_DIR_LEN * MAX_LIST_DIRS];
-    int outStarts[MAX_LIST_DIRS];
-    int total;
-    List(fullPath, out, outStarts, &total);
-    for (int i = 0; i < total; i++)
-        printf("%d: %s\n", outStarts[i], out + outStarts[i]);
-    printf("%d\n", total);
+    char message[MAX_UDP_MESSAGE_SIZE];
+    char messagePath[MAX_PATH_LEN];
+    char messagePayload[PAYLOAD_BLOCK_SIZE * PAYLOAD_MAX_BLOCKS];
 
-    /*
-    result = Remove(fullPath);
-    printf("Operation: Remove existing (recursive). Result: %d\n", result);
-    result = Remove(fullPath);
-    printf("Operation: Remove inexistent. Result: %d\n", result);
-    
-    PathExtendCwd("deleteme", fullPath);
+    char returnMessage[MAX_UDP_MESSAGE_SIZE];
 
-    result = Remove(fullPath);
-    printf("Operation: Remove existing (non recursive). Result: %d\n", result);
-    result = Remove(fullPath);
-    printf("Operation: Remove inexistent. Result: %d\n", result);
-    */
+    char* messageP;
 
+    while (ReceiveMessage(message, MAX_UDP_MESSAGE_SIZE) > 0)
+    {
+        messageP = message;
+
+        int returnMessageSize = 0;
+
+        char id = *messageP;
+        messageP++;
+
+        char ax = *messageP;
+        messageP++;
+
+        char instruction = *messageP;
+        messageP++;
+
+        strcpy(messagePath, messageP);
+        messageP += strlen(messagePath) + 1;
+
+        PathExtendCwd(messagePath, ax, fullPath);
+
+        // Write return message header
+        returnMessage[returnMessageSize] = id;
+        returnMessageSize++;
+        returnMessage[returnMessageSize] = ax;
+        returnMessageSize++;
+        returnMessage[returnMessageSize] = instruction;
+        returnMessageSize++;
+
+        switch (instruction)
+        {
+        case SFSS_WRITE:
+            char payloadSize = *messageP;
+            messageP++;
+
+            for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
+            {
+                messagePayload[i] = *messageP;
+                messageP++;
+            }
+
+            char offset = *messageP;
+            messageP++;
+
+            char error = Write(fullPath, messagePayload, payloadSize, offset);
+
+            returnMessage[returnMessageSize] = error;
+            returnMessageSize++;
+
+            break;
+        
+        case SFSS_READ:
+            break;
+
+        case SFSS_ADDDIR:
+            break;
+
+        case SFSS_REMOVE:
+            break;
+
+        case SFSS_LIST:
+            break;
+        }
+
+        SendMessage(returnMessage, returnMessageSize);
+    }
 }
 
-int PathExtendCwd(char* path, char* out)
+int PathExtendCwd(char* path, int ax, char* out)
 {
     if (getcwd(out, MAXPATHLEN) == NULL)
         return 1;
     
     while(*out)
         out++;
-    
+
+    out[0] = '/';
+    out++;
+
     strcpy(out, SFSS_ROOT_PATH);
     out += strlen(SFSS_ROOT_PATH);
+
+    if (ax != -1)
+    {
+        out[0] = '/';
+        out[1] = 'A';
+        out[2] = '1' + ax;
+        out += 3;
+    }
 
     strcpy(out, path);
 

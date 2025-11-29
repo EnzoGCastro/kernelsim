@@ -14,33 +14,32 @@
 #include <netinet/in.h>
 #include <netdb.h> 
 
-#define BUFSIZE 1024
+int sockfd;
+int serverlen;
+struct sockaddr_in serveraddr;
 
 /* 
  * error - wrapper for perror
  */
-void error(char *msg)
+void Error(char *msg)
 {
     perror(msg);
     exit(0);
 }
 
-int setupUdpClient(char* hostname, int portno)
+int SetupUdpClient(char* hostname, int portno)
 {
-    int sockfd, n;
-    int serverlen;
-    struct sockaddr_in serveraddr;
     struct hostent *server;
-    char buf[BUFSIZE];
 
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) 
-        error("ERROR opening socket");
+    if (sockfd < 0)
+        Error("ERROR opening socket");
 
     /* gethostbyname: get the server's DNS entry */
     server = gethostbyname(hostname);
-    if (server == NULL) {
+    if (server == NULL)
+    {
         fprintf(stderr,"ERROR, no such host as %s\n", hostname);
         exit(0);
     }
@@ -49,24 +48,24 @@ int setupUdpClient(char* hostname, int portno)
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
-	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    (char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
-    /* get a message from the user */
-    bzero(buf, BUFSIZE);
-    printf("Please enter msg: ");
-    fgets(buf, BUFSIZE, stdin);
-
-    /* send the message to the server */
-    serverlen = sizeof(serveraddr);
-    n = sendto(sockfd, buf, strlen(buf), 0, &serveraddr, serverlen);
-    if (n < 0) 
-      error("ERROR in sendto");
-    
-    /* print the server's reply */
-    n = recvfrom(sockfd, buf, strlen(buf), 0, &serveraddr, &serverlen);
-    if (n < 0) 
-      error("ERROR in recvfrom");
-    printf("Echo from server: %s", buf);
     return 0;
+}
+
+int SendMessage(char* message, int messageLen)
+{
+    int n = sendto(sockfd, message, messageLen, 0, &serveraddr, serverlen);
+    if (n < 0)
+        Error("ERROR in sendto");
+    return n;
+}
+
+int ReceiveMessage(char* buff, int buffLen)
+{
+    int n = recvfrom(sockfd, buff, buffLen, MSG_DONTWAIT, &serveraddr, &serverlen);
+    if (n < 0)
+        Error("ERROR in recvfrom");
+    return n;
 }

@@ -1,5 +1,7 @@
 #include "kernel.h"
 
+#include "udpclient.h"
+
 int appPids[5];
 AppContext appContexts[5];
 int appStates[5];
@@ -7,9 +9,19 @@ int appStates[5];
 int executing[5];
 int waitingIn1[5];
 int waitingIn2[5];
+int isBlocked[5];
 
 int accessed1[5];
 int accessed2[5];
+
+char updMessageIds[5];
+int udpWaitingMessage[5];
+double udpMessageResendTimer[5];
+char udpLastMessage[5][MAX_UDP_MESSAGE_SIZE];
+int udpLastMessageSize[5];
+int syscallReturnFds[5];
+
+char udpRecMessage[MAX_UDP_MESSAGE_SIZE];
 
 int interFd;
 
@@ -62,7 +74,6 @@ void CtrlcSigHandler(int signal)
         printf("\n  Unpaused\n");
         paused = 0;
     }
-
 }
 
 void InterSigHandler(int signal)
@@ -130,29 +141,33 @@ void AppSigHandler(int signal)
     read(syscallFd, &infoLen, sizeof(int));
 
     char info[MAX_SYSCALL_INFO_SIZE];
+    char* infoP = info;
     read(syscallFd, info, sizeof(char) * infoLen);
     
     SaveContext();
 
-    switch (info[0])
+    int instruction = infoP[0];
+    infoP++;
+
+    switch (instruction)
     {
     case FINISH:
-        syscallFINISH(info);
+        syscallFINISH(infoP);
         break;
     case WT:
-        syscallWT(info);
+        syscallWT(infoP);
         break;
     case RD:
-        syscallRD(info);
+        syscallRD(infoP);
         break;
     case AD:
-        syscallAD(info);
+        syscallAD(infoP);
         break;
     case RM:
-        syscallRM(info);
+        syscallRM(infoP);
         break;
     case LS:
-        syscallLS(info);
+        syscallLS(infoP);
         break;
     }
 
@@ -160,6 +175,72 @@ void AppSigHandler(int signal)
     appData->appSendingData = 0;
 
     LoadContext();
+}
+
+//
+// UDP
+//
+
+void SendUdpMessage(int appId)
+{
+    udpWaitingMessage[appId] = 1;
+    udpMessageResendTimer[appId] = CLOCK_TIME_MS;
+    isBlocked[appId] = 1;
+    SendMessage(udpLastMessage[appId], udpLastMessageSize[appId]);
+}
+
+void ReceiveUdpMessage()
+{
+    // formato (id, owner, instruction, ...
+
+    char* message = udpRecMessage;
+
+    char id = *message;
+    message++;
+
+    int ax = *message;
+    message++;
+
+    if (updMessageIds[ax] != id)
+        return;
+
+    char instruction = *message;
+    message++;
+    
+    switch (instruction)
+    {
+    case SFSS_WRITE:
+        // continuacao formato ... error)
+        char error = *message;
+        if (error)
+            printf("Write error for program %d\n", ax + 1);
+        break;
+    
+    case SFSS_READ:
+        break;
+
+    case SFSS_ADDDIR:
+        break;
+
+    case SFSS_REMOVE:
+        break;
+
+    case SFSS_LIST:
+        break;
+    }
+
+    udpWaitingMessage[ax] = 0;
+    isBlocked[ax] = 0;
+}
+
+void ProcessUdpMessages()
+{
+    while (ReceiveMessage(udpRecMessage, MAX_UDP_MESSAGE_SIZE) > 0)
+        ReceiveUdpMessage();
+
+    for (int i = 0; i < 5; i++)
+        if (udpWaitingMessage[i] && udpMessageResendTimer[i] < CLOCK_TIME_MS - UDP_REQ_RESEND_DURATION_MSEC)
+            SendUdpMessage(i); // Resend
 }
 
 //
@@ -177,16 +258,21 @@ int main()
         executing[i] = -1;
         waitingIn1[i] = -1;
         waitingIn2[i] = -1;
+        isBlocked[i] = 0;
         appStates[i] = -1;
         accessed1[i] = 0;
         accessed2[i] = 0;
+        updMessageIds[i] = 0;
+        syscallReturnFds[i] = -1;
     }
+
+    SetupUdpClient("127.0.0.1", 8000);
 
     CreateInterController();
     CreateApps();
 
-    while(1){
-    }
+    while(1)
+        ProcessUdpMessages();
 
     return 0;
 }
@@ -374,6 +460,10 @@ int PopIndex(int* arr, int index)
     return index;
 }
 
+//
+// Process syscalls
+//
+
 void syscallFINISH(char* info)
 {
     appStates[Pop(executing)] = FINISHED;
@@ -381,8 +471,9 @@ void syscallFINISH(char* info)
 
 void syscallWT(char* info)
 {
-    info++;
-
+    int ax = Pop(executing);
+    PushEnd(waitingIn1, ax);
+    
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -404,6 +495,39 @@ void syscallWT(char* info)
 
     unsigned char offset = *info;
 
+    // udp package (id, owner, write, path, payloadSize, payload, offset)
+
+    char* message = udpLastMessage[ax];
+    int messageSize = 0;
+
+    message[messageSize] = updMessageIds[ax];
+    messageSize++;
+
+    message[messageSize] = ax;
+    messageSize++;
+
+    message[messageSize] = SFSS_WRITE;
+    messageSize++;
+
+    strcpy(message + messageSize, path);
+    messageSize += strlen(path) + 1;
+
+    message[messageSize] = payloadSize;
+    messageSize++;
+
+    for (int i = 0; i < payloadSize; i++)
+    {
+        message[messageSize] = payload[i];
+        messageSize++;
+    }
+
+    message[messageSize] = offset;
+    messageSize++;
+
+    udpLastMessageSize[ax] = messageSize;
+    
+    SendUdpMessage(ax);
+
     /*
     printf("kernel - write ---\n");
     printf("path: %s\n", path);
@@ -419,8 +543,6 @@ void syscallWT(char* info)
 
 void syscallRD(char* info)
 {
-    info++;
-
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -451,8 +573,6 @@ void syscallRD(char* info)
 
 void syscallAD(char* info)
 {
-    info++;
-
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -481,8 +601,6 @@ void syscallAD(char* info)
 
 void syscallRM(char* info)
 {
-    info++;
-
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -501,8 +619,6 @@ void syscallRM(char* info)
 
 void syscallLS(char* info)
 {
-    info++;
-
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {

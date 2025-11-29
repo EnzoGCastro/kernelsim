@@ -20,6 +20,9 @@
 #define SEND_D2_CHANCE_1000 5 // Out of 1000
 #define REQUEST_INPUT_CHANCE_100 15
 #define MAX_SYSCALL_INFO_SIZE 1024
+#define UDP_REQ_RESEND_DURATION_MSEC 500
+
+#define CLOCK_TIME_MS (clock() / (CLOCKS_PER_SEC / 1000.0))
 
 #define CLOCK 0 // Code for clock tick sent by inter controller
 

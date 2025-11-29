@@ -6,37 +6,37 @@ int myPid;
 
 const int FILE_PATH_SIZE = 4;
 const char* const FILE_PATHS[] = {
-    "f1.txt",
-    "f2.txt",
-    "dir/f3.txt",
-    "dir/dir/f4.txt"
+    "/f1.txt",
+    "/f2.txt",
+    "/dir/f3.txt",
+    "/dir/dir/f4.txt"
 };
 
 const int AD_PATH_SIZE = 2;
 const char* const AD_PATHS[] = {
-    "",
-    "dir"
+    "/",
+    "/dir"
 };
 const int AD_NAME_SIZE = 1;
 const char* const AD_NAMES[] = {
-    "dir"
+    "/dir"
 };
 
 const int RM_PATH_SIZE = 6;
 const char* const RM_PATHS[] = {
-    "f1.txt",
-    "f2.txt",
-    "dir",
-    "dir/f3.txt",
-    "dir/dir",
-    "dir/dir/f4.txt"
+    "/f1.txt",
+    "/f2.txt",
+    "/dir",
+    "/dir/f3.txt",
+    "/dir/dir",
+    "/dir/dir/f4.txt"
 };
 
 const int LS_PATH_SIZE = 3;
 const char* const LS_PATHS[] = {
-    "",
-    "dir",
-    "dir/dir"
+    "/",
+    "/dir",
+    "/dir/dir"
 };
 
 void _syscall(char* info, int infoLen);
@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
             // generate a random syscall
 
             d = d % 5;
-            switch(d)
+            switch(0)
             {
             case 0:
                 callWrite();
