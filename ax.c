@@ -1,7 +1,8 @@
 #include "kernel.h"
 
 AppData* data;
-int syscallFd; // pipe para dados do syscall
+int syscallFd; // pipe para escrever dados do syscall
+int syscallReturnFd; // pipe para ler retorno do syscall
 int myPid;
 
 const int FILE_PATH_SIZE = 4;
@@ -56,6 +57,7 @@ int main(int argc, char* argv[])
     signal(SIGINT, CtrlcSigHandler);
     data = shmat(atoi(argv[1]), 0, 0);
     syscallFd = atoi(argv[2]);
+    syscallReturnFd = atoi(argv[3]);
 
     data->context.PC = 0;
 
@@ -68,29 +70,22 @@ int main(int argc, char* argv[])
         data->context.PC++;
         
         int d = rand() % 100;
-        if (d < 101)//REQUEST_INPUT_CHANCE_100)
+        if (d < REQUEST_INPUT_CHANCE_100)
         {
             // generate a random syscall
 
-            d = d % 5;
-            switch(0)
-            {
-            case 0:
+            d = d % 13;
+            // 5x mais chance de chamar read ou write
+            if (d < 5)
                 callWrite();
-                break;
-            case 1:
+            else if (d < 10)
                 callRead();
-                break;
-            case 2:
+            else if (d < 11)
                 callAdd();
-                break;
-            case 3:
+            else if (d < 12)
                 callRemove();
-                break;
-            case 4:
+            else
                 callList();
-                break;
-            }
         }
     }
     
@@ -141,6 +136,14 @@ void callWrite()
     size++;
     
     _syscall(info, size);
+
+    char error;
+    read(syscallReturnFd, &error, sizeof(char));
+
+    if (error)
+        printf("Write error at %s\n", path);
+    else
+        printf("Write success at %s\n", path);
 }
 
 void callRead()
@@ -155,28 +158,26 @@ void callRead()
     strcpy(info + size, path);
     size += strlen(path) + 1;
 
-    int fd[2];
-    pipe(fd);
-
-    char* charFd = (char*) &(fd[1]);
-    for (int i = 0; i < 4; i++)
-    {
-        info[size] = charFd[i];
-        size++;
-    }
-
     unsigned char offset = rand() % PAYLOAD_MAX_BLOCKS;
     info[size] = offset;
     size++;
-    
+
     _syscall(info, size);
 
-    // ler fd
-    //char buffer[16];
-    //read(fd[0], &buffer, 16);
+    char error;
+    read(syscallReturnFd, &error, sizeof(char));
 
-    close(fd[0]);
-    close(fd[1]);
+    if (error)
+        printf("Read error at %s\n", path);
+    else
+    {
+        char payload[PAYLOAD_BLOCK_SIZE];
+        read(syscallReturnFd, payload, sizeof(char) * PAYLOAD_BLOCK_SIZE);
+        printf("Read success at %s, value: ", path);
+        for (int i = 0; i < PAYLOAD_BLOCK_SIZE; i++)
+            printf("%c", payload[i]);
+        printf("\n");
+    }
 }
 
 void callAdd()
@@ -200,6 +201,14 @@ void callAdd()
     size++;
 
     _syscall(info, size);
+
+    char error;
+    read(syscallReturnFd, &error, sizeof(char));
+    
+    if (error)
+        printf("Add dir error at %s, new dir: %s\n", path, dir);
+    else
+        printf("Add dir success at %s, new dir: %s\n", path, dir);
 }
 
 void callRemove()
@@ -215,6 +224,14 @@ void callRemove()
     size += strlen(path) + 1;
 
     _syscall(info, size);
+
+    char error;
+    read(syscallReturnFd, &error, sizeof(char));
+    
+    if (error)
+        printf("Remove error at %s\n", path);
+    else
+        printf("Remove success at %s\n", path);
 }
 
 void callList()
@@ -229,17 +246,39 @@ void callList()
     strcpy(info + size, path);
     size += strlen(path) + 1;
 
-    int fd[2];
-    pipe(fd);
-
-    char* charFd = (char*) &(fd[1]);
-    for (int i = 0; i < 4; i++)
-    {
-        info[size] = charFd[i];
-        size++;
-    }
-
     _syscall(info, size);
+
+    char error;
+    read(syscallReturnFd, &error, sizeof(char));
+    
+    if (error)
+        printf("List error at %s\n", path);
+    else
+    {
+        int total;
+        int dirStarts[MAX_LIST_DIRS];
+        char dirs[MAX_DIR_LEN * MAX_LIST_DIRS];
+
+        read(syscallReturnFd, &total, sizeof(int));
+
+        int totalSent = total < MAX_LIST_DIRS ? total : MAX_LIST_DIRS;
+        read(syscallReturnFd, dirStarts, sizeof(int) * totalSent);
+
+        int currentDir = 0;
+        int currentChar = 0;
+        while (currentDir < totalSent)
+        {
+            read(syscallReturnFd, dirs + currentChar, sizeof(char));
+            if (dirs[currentChar] == '\0')
+                currentDir++;
+            currentChar++;
+        }
+
+        printf("List success at %s, total: %d, dirs: ", path, total);
+        for (int i = 0; i < totalSent; i++)
+            printf("%s ", dirs + dirStarts[i]);
+        printf("\n");
+    }
 }
 
 void callFinish()

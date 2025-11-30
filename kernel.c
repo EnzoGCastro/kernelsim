@@ -19,7 +19,6 @@ int udpWaitingMessage[5];
 double udpMessageResendTimer[5];
 char udpLastMessage[5][MAX_UDP_MESSAGE_SIZE];
 int udpLastMessageSize[5];
-int syscallReturnFds[5];
 
 char udpRecMessage[MAX_UDP_MESSAGE_SIZE];
 
@@ -27,6 +26,7 @@ int interFd;
 
 AppData* appData;
 int syscallFd;
+int syscallReturnFds[5];
 
 int paused = 0;
 
@@ -100,7 +100,6 @@ void InterSigHandler(int signal)
         }
         else if (info == D1)
         {
-            printf("D1\n");
             if (waitingIn1[0] == -1 || isBlocked[waitingIn1[0]])
                 continue;
 
@@ -109,11 +108,11 @@ void InterSigHandler(int signal)
             int waiter = Pop(waitingIn1);
             accessed1[waiter] += 1;
             PushStart(executing, waiter);
+            SetState(executing[0], EXECUTING);
             LoadContext();
         }
         else if (info == D2)
         {
-            printf("D2\n");
             if (waitingIn2[0] == -1 || isBlocked[waitingIn2[0]])
                 continue;
 
@@ -122,14 +121,19 @@ void InterSigHandler(int signal)
             int waiter = Pop(waitingIn2);
             accessed2[waiter] += 1;
             PushStart(executing, waiter);
+            SetState(executing[0], EXECUTING);
             LoadContext();
         }
     }
 
-    pthread_mutex_unlock(&(appData->appMutex));
+    PrintAppStates();
+    printf("\n");
+    printf("Executing [%d, %d, %d, %d, %d]\n", executing[0], executing[1], executing[2], executing[3], executing[4]);
+    printf("Waiting 1 [%d, %d, %d, %d, %d]\n", waitingIn1[0], waitingIn1[1], waitingIn1[2], waitingIn1[3], waitingIn1[4]);
+    printf("Waiting 2 [%d, %d, %d, %d, %d]\n", waitingIn2[0], waitingIn2[1], waitingIn2[2], waitingIn2[3], waitingIn2[4]);
+    printf("\n");
 
-    //PrintAppStates();
-    //printf("\n");
+    pthread_mutex_unlock(&(appData->appMutex));
 }
 
 void AppSigHandler(int signal)
@@ -169,7 +173,13 @@ void AppSigHandler(int signal)
     case LS:
         syscallLS(infoP);
         break;
+
+    default:
+        printf("ERROR invalid syscall\n");
+        break;
     }
+
+    SetState(executing[0], EXECUTING);
 
     pthread_mutex_unlock(&(appData->appMutex));
     appData->appSendingData = 0;
@@ -206,25 +216,79 @@ void ReceiveUdpMessage()
     char instruction = *message;
     message++;
     
+    char error;
+
     switch (instruction)
     {
     case SFSS_WRITE:
         // continuacao formato ... error)
-        char error = *message;
-        if (error)
-            printf("Write error for program %d\n", ax + 1);
+
+        error = *message;
+        message++;
+        write(syscallReturnFds[ax], &error, sizeof(char));
+
         break;
     
     case SFSS_READ:
+        // continuacao formato ... error, [se tiver erro para aqui] payload)
+
+        error = *message;
+        message++;
+        write(syscallReturnFds[ax], &error, sizeof(char));
+
+        if (!error)
+        {
+            write(syscallReturnFds[ax], message, sizeof(char) * PAYLOAD_BLOCK_SIZE);
+            message += PAYLOAD_BLOCK_SIZE;
+        }
+
         break;
 
     case SFSS_ADDDIR:
+        // continuacao formato ... error)
+
+        error = *message;
+        message++;
+        write(syscallReturnFds[ax], &error, sizeof(char));
+
         break;
 
     case SFSS_REMOVE:
+        // continuacao formato ... error)
+
+        error = *message;
+        message++;
+        write(syscallReturnFds[ax], &error, sizeof(char));
+
         break;
 
     case SFSS_LIST:
+        // continuacao formato ... error, [se tiver erro para aqui] total dirs, dir starts <n>, dirs <n>)
+
+        error = *message;
+        message++;
+        write(syscallReturnFds[ax], &error, sizeof(char));
+
+        if (!error)
+        {
+            int total;
+            memcpy(&total, message, sizeof(int));
+            write(syscallReturnFds[ax], &total, sizeof(int));
+            message += sizeof(int);
+
+            int totalSent = total < MAX_LIST_DIRS ? total : MAX_LIST_DIRS;
+            write(syscallReturnFds[ax], message, sizeof(int) * totalSent);
+            message += sizeof(int) * totalSent;
+
+            for (int i = 0; i < totalSent; i++)
+            {
+                char dir[MAX_DIR_LEN];
+                strcpy(dir, message);
+                write(syscallReturnFds[ax], dir, strlen(dir) + 1);
+                message += strlen(dir) + 1;
+            }
+        }
+
         break;
     }
 
@@ -323,11 +387,13 @@ void CreateApps()
 
     char arg1[11] = "0000000000";
     char arg2[11] = "0000000000";
+    char arg3[11] = "0000000000";
 
-    char* args[4] = {
+    char* args[5] = {
         "./ax",
         arg1,
         arg2,
+        arg3,
         NULL
     };
     itoa(shm, args[1], 10);
@@ -337,6 +403,11 @@ void CreateApps()
     {
         executing[i] = i;
         appStates[i] = i == 0 ? EXECUTING : READY;
+
+        int returnFd[2];
+        pipe(returnFd);
+        syscallReturnFds[i] = returnFd[1];
+        itoa(returnFd[0], args[3], 10);
 
         int pid = fork();
         if (pid == 0)
@@ -349,6 +420,8 @@ void CreateApps()
         appPids[i] = pid;
         if (i != 0)
             kill(pid, SIGSTOP);
+
+        close(returnFd[0]);
     }
 
     close(fd[1]);
@@ -466,13 +539,14 @@ int PopIndex(int* arr, int index)
 
 void syscallFINISH(char* info)
 {
-    appStates[Pop(executing)] = FINISHED;
+    SetState(Pop(executing), FINISHED);
 }
 
 void syscallWT(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn1, ax);
+    SetState(ax, WAITING_WT);
     isBlocked[ax] = 1;
     
     char path[MAX_PATH_LEN];
@@ -546,6 +620,7 @@ void syscallRD(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn1, ax);
+    SetState(ax, WAITING_RD);
     isBlocked[ax] = 1;
     
     char path[MAX_PATH_LEN];
@@ -557,15 +632,29 @@ void syscallRD(char* info)
             break;
     }
 
-    char charFd[4];
-    for (int i = 0; i < 4; i++)
-    {
-        charFd[i] = *info;
-        info++;
-    }
-    int fd = *((int*)charFd);
-
     unsigned char offset = *info;
+
+    char* message = udpLastMessage[ax];
+    int messageSize = 0;
+
+    message[messageSize] = updMessageIds[ax];
+    messageSize++;
+
+    message[messageSize] = ax;
+    messageSize++;
+
+    message[messageSize] = SFSS_READ;
+    messageSize++;
+
+    strcpy(message + messageSize, path);
+    messageSize += strlen(path) + 1;
+    
+    message[messageSize] = offset;
+    messageSize++;
+
+    udpLastMessageSize[ax] = messageSize;
+    
+    SendUdpMessage(ax);
 
     /*
     printf("kernel - read ---\n");
@@ -580,6 +669,7 @@ void syscallAD(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn2, ax);
+    SetState(ax, WAITING_AD);
     isBlocked[ax] = 1;
 
     char path[MAX_PATH_LEN];
@@ -600,6 +690,28 @@ void syscallAD(char* info)
             break;
     }
 
+    char* message = udpLastMessage[ax];
+    int messageSize = 0;
+
+    message[messageSize] = updMessageIds[ax];
+    messageSize++;
+
+    message[messageSize] = ax;
+    messageSize++;
+
+    message[messageSize] = SFSS_ADDDIR;
+    messageSize++;
+
+    strcpy(message + messageSize, path);
+    messageSize += strlen(path) + 1;
+    
+    strcpy(message + messageSize, dir);
+    messageSize += strlen(dir) + 1;
+
+    udpLastMessageSize[ax] = messageSize;
+    
+    SendUdpMessage(ax);
+
     /*
     printf("kernel - add ---\n");
     printf("path: %s\n", path);
@@ -612,6 +724,7 @@ void syscallRM(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn2, ax);
+    SetState(ax, WAITING_RM);
     isBlocked[ax] = 1;
 
     char path[MAX_PATH_LEN];
@@ -622,6 +735,25 @@ void syscallRM(char* info)
         if (path[i] == '\0')
             break;
     }
+
+    char* message = udpLastMessage[ax];
+    int messageSize = 0;
+
+    message[messageSize] = updMessageIds[ax];
+    messageSize++;
+
+    message[messageSize] = ax;
+    messageSize++;
+
+    message[messageSize] = SFSS_REMOVE;
+    messageSize++;
+
+    strcpy(message + messageSize, path);
+    messageSize += strlen(path) + 1;
+
+    udpLastMessageSize[ax] = messageSize;
+    
+    SendUdpMessage(ax);
 
     /*
     printf("kernel - remove ---\n");
@@ -634,6 +766,7 @@ void syscallLS(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn2, ax);
+    SetState(ax, WAITING_LS);
     isBlocked[ax] = 1;
 
     char path[MAX_PATH_LEN];
@@ -645,13 +778,24 @@ void syscallLS(char* info)
             break;
     }
 
-    char charFd[4];
-    for (int i = 0; i < 4; i++)
-    {
-        charFd[i] = *info;
-        info++;
-    }
-    int fd = *((int*)charFd);
+    char* message = udpLastMessage[ax];
+    int messageSize = 0;
+
+    message[messageSize] = updMessageIds[ax];
+    messageSize++;
+
+    message[messageSize] = ax;
+    messageSize++;
+
+    message[messageSize] = SFSS_LIST;
+    messageSize++;
+
+    strcpy(message + messageSize, path);
+    messageSize += strlen(path) + 1;
+
+    udpLastMessageSize[ax] = messageSize;
+    
+    SendUdpMessage(ax);
 
     /*
     printf("kernel - list ---\n");

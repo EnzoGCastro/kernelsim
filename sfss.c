@@ -52,6 +52,12 @@ int main()
 
     char* messageP;
 
+    char offset;
+    char error;
+    char outList[MAX_DIR_LEN * MAX_LIST_DIRS];
+    int outListStarts[MAX_LIST_DIRS];
+    int totalList;
+
     while (ReceiveMessage(message, MAX_UDP_MESSAGE_SIZE) > 0)
     {
         messageP = message;
@@ -92,38 +98,78 @@ int main()
                 messageP++;
             }
 
-            char offset = *messageP;
+            offset = *messageP;
             messageP++;
 
-            char error = Write(fullPath, messagePayload, payloadSize, offset);
+            error = Write(fullPath, messagePayload, payloadSize, offset);
+
+            returnMessage[returnMessageSize] = error;
+            returnMessageSize++;
+            
+            break;
+        
+        case SFSS_READ:
+            offset = *messageP;
+            messageP++;
+
+            error = Read(fullPath, messagePayload, offset);
 
             returnMessage[returnMessageSize] = error;
             returnMessageSize++;
 
-            printf("Package id: %d\n", id);
-            printf("App: %d\n", ax);
-            printf("Instruction: %d\n", instruction);
-            printf("Path: %s\n", messagePath);
-            printf("Payload size: %d\n", payloadSize);
-            printf("Payload: ");
-            for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
-                printf("%c", messagePayload[i]);
-            printf("\n");
-            printf("Payload offset: %d\n", offset);
-            printf("\n");
+            if (!error)
+                for (int i = 0; i < PAYLOAD_BLOCK_SIZE; i++)
+                {
+                    returnMessage[returnMessageSize] = messagePayload[i];
+                    returnMessageSize++;
+                }
 
-            break;
-        
-        case SFSS_READ:
             break;
 
         case SFSS_ADDDIR:
+            strcpy(messagePayload, messageP); // dir
+            messageP += strlen(messagePayload) + 1;
+
+            error = AddDir(fullPath, messagePayload);
+
+            returnMessage[returnMessageSize] = error;
+            returnMessageSize++;
+
             break;
 
         case SFSS_REMOVE:
+            error = Remove(fullPath);
+
+            returnMessage[returnMessageSize] = error;
+            returnMessageSize++;
+
             break;
 
         case SFSS_LIST:
+            error = List(fullPath, outList, outListStarts, &totalList);
+
+            returnMessage[returnMessageSize] = error;
+            returnMessageSize++;
+
+            if (!error)
+            {
+                memcpy(returnMessage + returnMessageSize, &totalList, sizeof(int));
+                returnMessageSize += sizeof(int);
+
+                int totalSent = totalList < MAX_LIST_DIRS ? totalList : MAX_LIST_DIRS;
+
+                memcpy(returnMessage + returnMessageSize, outListStarts, sizeof(int) * totalSent);
+                returnMessageSize += sizeof(int) * totalSent;
+
+                char* out = outList;
+                for (int i = 0; i < totalSent; i++)
+                {
+                    strcpy(returnMessage + returnMessageSize, out);
+                    returnMessageSize += strlen(out) + 1;
+                    out += strlen(out) + 1;
+                }
+            }
+
             break;
         }
 
