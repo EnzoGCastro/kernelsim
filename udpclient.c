@@ -15,7 +15,7 @@
 #include <netdb.h> 
 
 int sockfd;
-int serverlen;
+socklen_t serverlen;
 struct sockaddr_in serveraddr;
 
 /* 
@@ -49,14 +49,16 @@ int SetupUdpClient(char* hostname, int portno)
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
     (char *)&serveraddr.sin_addr.s_addr, server->h_length);
-    serveraddr.sin_port = htons(portno);
+    serveraddr.sin_port = htons((unsigned short)portno);
+
+    serverlen = sizeof(serveraddr);
 
     return 0;
 }
 
 int SendMessage(char* message, int messageLen)
 {
-    int n = sendto(sockfd, message, messageLen, 0, &serveraddr, serverlen);
+    int n = sendto(sockfd, message, messageLen, 0, (const struct sockaddr*) &serveraddr, serverlen);
     if (n < 0)
         Error("ERROR in sendto");
     return n;
@@ -64,8 +66,5 @@ int SendMessage(char* message, int messageLen)
 
 int ReceiveMessage(char* buff, int buffLen)
 {
-    int n = recvfrom(sockfd, buff, buffLen, MSG_DONTWAIT, &serveraddr, &serverlen);
-    if (n < 0)
-        Error("ERROR in recvfrom");
-    return n;
+    return recvfrom(sockfd, buff, buffLen, MSG_DONTWAIT, (struct sockaddr* restrict) &serveraddr, &serverlen);
 }

@@ -16,8 +16,10 @@
 #include <arpa/inet.h>
 
 int sockfd;
-int clientlen;
+socklen_t clientlen;
 struct sockaddr_in clientaddr;
+struct hostent *hostp;
+char *hostaddrp;
 
 /*
  * error - wrapper for perror
@@ -69,7 +71,7 @@ int SetupUdpServer(int portno)
 
 int SendMessage(char* message, int messageLen)
 {
-    int n = sendto(sockfd, message, messageLen, 0, (struct sockaddr *) &clientaddr, clientlen);
+    int n = sendto(sockfd, message, messageLen, 0, (const struct sockaddr *) &clientaddr, clientlen);
     if (n < 0)
         Error("ERROR in sendto");
     return n;
@@ -77,7 +79,7 @@ int SendMessage(char* message, int messageLen)
 
 int ReceiveMessage(char* buff, int buffLen)
 {
-    int n = recvfrom(sockfd, buff, buffLen, 0, (struct sockaddr *) &clientaddr, &clientlen);
+    int n = recvfrom(sockfd, buff, buffLen, 0, (struct sockaddr* restrict) &clientaddr, &clientlen);
     if (n < 0)
         Error("ERROR in recvfrom");
     return n;

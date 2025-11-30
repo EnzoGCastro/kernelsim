@@ -42,7 +42,7 @@ int main()
         PathReturn(fullPath);
     }
 
-    SetupUdpServer(8000);
+    SetupUdpServer(UDP_PORT);
 
     char message[MAX_UDP_MESSAGE_SIZE];
     char messagePath[MAX_PATH_LEN];
@@ -99,6 +99,18 @@ int main()
 
             returnMessage[returnMessageSize] = error;
             returnMessageSize++;
+
+            printf("Package id: %d\n", id);
+            printf("App: %d\n", ax);
+            printf("Instruction: %d\n", instruction);
+            printf("Path: %s\n", messagePath);
+            printf("Payload size: %d\n", payloadSize);
+            printf("Payload: ");
+            for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
+                printf("%c", messagePayload[i]);
+            printf("\n");
+            printf("Payload offset: %d\n", offset);
+            printf("\n");
 
             break;
         

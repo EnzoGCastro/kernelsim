@@ -68,7 +68,7 @@ int main(int argc, char* argv[])
         data->context.PC++;
         
         int d = rand() % 100;
-        if (d < REQUEST_INPUT_CHANCE_100)
+        if (d < 101)//REQUEST_INPUT_CHANCE_100)
         {
             // generate a random syscall
 

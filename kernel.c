@@ -101,7 +101,7 @@ void InterSigHandler(int signal)
         else if (info == D1)
         {
             printf("D1\n");
-            if (waitingIn1[0] == -1)
+            if (waitingIn1[0] == -1 || isBlocked[waitingIn1[0]])
                 continue;
 
             SaveContext();
@@ -114,7 +114,7 @@ void InterSigHandler(int signal)
         else if (info == D2)
         {
             printf("D2\n");
-            if (waitingIn2[0] == -1)
+            if (waitingIn2[0] == -1 || isBlocked[waitingIn2[0]])
                 continue;
 
             SaveContext();
@@ -128,8 +128,8 @@ void InterSigHandler(int signal)
 
     pthread_mutex_unlock(&(appData->appMutex));
 
-    PrintAppStates();
-    printf("\n");
+    //PrintAppStates();
+    //printf("\n");
 }
 
 void AppSigHandler(int signal)
@@ -185,7 +185,6 @@ void SendUdpMessage(int appId)
 {
     udpWaitingMessage[appId] = 1;
     udpMessageResendTimer[appId] = CLOCK_TIME_MS;
-    isBlocked[appId] = 1;
     SendMessage(udpLastMessage[appId], udpLastMessageSize[appId]);
 }
 
@@ -229,6 +228,7 @@ void ReceiveUdpMessage()
         break;
     }
 
+    updMessageIds[ax] = (updMessageIds[ax] + 1) % 256;
     udpWaitingMessage[ax] = 0;
     isBlocked[ax] = 0;
 }
@@ -266,7 +266,7 @@ int main()
         syscallReturnFds[i] = -1;
     }
 
-    SetupUdpClient("127.0.0.1", 8000);
+    SetupUdpClient("127.0.0.1", UDP_PORT);
 
     CreateInterController();
     CreateApps();
@@ -473,6 +473,7 @@ void syscallWT(char* info)
 {
     int ax = Pop(executing);
     PushEnd(waitingIn1, ax);
+    isBlocked[ax] = 1;
     
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
@@ -515,7 +516,7 @@ void syscallWT(char* info)
     message[messageSize] = payloadSize;
     messageSize++;
 
-    for (int i = 0; i < payloadSize; i++)
+    for (int i = 0; i < payloadSize * PAYLOAD_BLOCK_SIZE; i++)
     {
         message[messageSize] = payload[i];
         messageSize++;
@@ -543,6 +544,10 @@ void syscallWT(char* info)
 
 void syscallRD(char* info)
 {
+    int ax = Pop(executing);
+    PushEnd(waitingIn1, ax);
+    isBlocked[ax] = 1;
+    
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -573,6 +578,10 @@ void syscallRD(char* info)
 
 void syscallAD(char* info)
 {
+    int ax = Pop(executing);
+    PushEnd(waitingIn2, ax);
+    isBlocked[ax] = 1;
+
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -601,6 +610,10 @@ void syscallAD(char* info)
 
 void syscallRM(char* info)
 {
+    int ax = Pop(executing);
+    PushEnd(waitingIn2, ax);
+    isBlocked[ax] = 1;
+
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
@@ -619,6 +632,10 @@ void syscallRM(char* info)
 
 void syscallLS(char* info)
 {
+    int ax = Pop(executing);
+    PushEnd(waitingIn2, ax);
+    isBlocked[ax] = 1;
+
     char path[MAX_PATH_LEN];
     for (int i = 0; i < MAX_PATH_LEN; i++)
     {
